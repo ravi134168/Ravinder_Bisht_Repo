@@ -1,0 +1,201 @@
+---
+title: "Exercise_Type_Predict"
+author: "Ravinder Bisht"
+date: "December 12, 2020"
+output: html_document
+---
+
+##**Background**
+Based on the accelerometer data the type of exercise can be classified into 5 types. Our goal here is to predict the manner in which the exercise is done based on the variables in this accelerometer data by fitting different models to this data.
+
+
+##**Summary**
+Random forest model was the best model in the prediction of exercise type and predcited the test data with an accuracy of 99.1%.
+
+```{r include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(dplyr)
+library(caret)
+library(gbm)
+library(rpart)
+library(randomForest)
+
+```
+
+
+```{r echo=TRUE}
+knitr::opts_chunk$set(echo = TRUE)
+
+set.seed(1357)
+data <- read.csv("pml-training.csv", row.names = NULL, na.strings = c("", "NA")) 
+
+```
+
+
+##**Data Cleaning**
+**Non Measurement Data**: We noticed that there are some variables which does not have any measurement data. So we can remove these unnecessary fields (First 7 columns)
+
+```{r }
+knitr::opts_chunk$set(echo = TRUE)
+data <- data[,-1:-7]
+```
+
+**NA/Blank values**: When we try to look through the data we found that some of the fields have most of the data with NA/Blank values. So we prepared a summary of fields with NA values
+
+```{r }
+knitr::opts_chunk$set(echo = TRUE)
+
+NA_summary <- sapply(data, function(x) sum(is.na(x)))
+NA_summary <- data.frame(NA_summary)
+NA_summary <- NA_summary %>% mutate( Rnum = row_number())
+colnames(NA_summary) <- c("NA_Count", "Row_num")
+
+##Unique number of NA values in different columns of dataframe
+Unique_NA_Count <- unique(NA_summary$NA_Count)
+
+print(data.frame(Unique_NAs = Unique_NA_Count))
+
+```
+
+We observed that there are some variables with same (19216) number of NA values out of 19622 total records. These variables are definitely not impacting the class type of exercise and will not be helpful in the prediction. So we removed these variables from data.
+
+```{r }
+knitr::opts_chunk$set(echo = TRUE)
+
+##Removing columns with 0 number of NAs
+NA_summary <- NA_summary %>% filter (NA_Count == 0)
+
+##Remove high NA columns from data
+data <- data[,NA_summary$Row_num]
+
+```
+
+Checking Variables with zero variability
+
+```{r }
+knitr::opts_chunk$set(echo = TRUE)
+
+nzerovariability <- nearZeroVar(data)
+
+```
+We observed that there are no other variables with zero variability
+
+
+####Splitting data into train/test sets
+We are cutting training data into 2 datasets. One for training the data and second one for testing our results for final prediction.
+
+```{r }
+knitr::opts_chunk$set(echo = TRUE)
+
+# Splitting into 70%:30 ratio
+
+train_Rows <- createDataPartition(y=data$classe, p = .70, list = FALSE)
+train <- data[train_Rows,]
+test <- data[-train_Rows,]
+
+# Cross validation - 5 fold cv to optimize tuning parameters
+
+cv_control <- trainControl(method= "cv", number = 5)
+
+```
+
+##**Building Model**
+
+###**Generalized Boosted Regression**
+
+```{r }
+knitr::opts_chunk$set(echo = TRUE)
+
+gbm_model <- train(classe ~ ., data=train, method="gbm", trControl= cv_control, verbose=FALSE)
+gbm_predict <- predict(gbm_model, newdata = test)
+gbm_confmatrix <- confusionMatrix(test$classe, gbm_predict)
+
+```
+
+Checking the out-of sample accuracy of the model:
+
+```{r }
+knitr::opts_chunk$set(echo = TRUE)
+
+gbm_confmatrix$table
+
+gbm_confmatrix$overall[1]
+
+```
+The accuracy of the generalized boosted regression model is high
+
+
+###**Classification Tree**
+
+```{r }
+knitr::opts_chunk$set(echo = TRUE)
+
+classif_Model <- train(classe ~ ., method = "rpart", data = train, trControl= cv_control )
+classif_train <- predict(classif_Model, newdata = test)
+classif_confmatrix <- confusionMatrix(test$classe, classif_train)
+
+```
+
+Confusion matrix
+
+```{r }
+knitr::opts_chunk$set(echo = TRUE)
+
+classif_confmatrix$table
+```
+
+Checking the out-of sample accuracy of the model:
+
+```{r }
+knitr::opts_chunk$set(echo = TRUE)
+
+classif_confmatrix$overall[1]
+
+```
+ 
+The accuracy of classfication tree is very low here 
+ 
+###**Random Forest**
+
+```{r }
+knitr::opts_chunk$set(echo = TRUE)
+
+rf_model <- train(classe ~ ., method = "rf", data = train, trControl= cv_control)
+rf_test <- predict(rf_model, newdata = test)
+rf_Test_confmatrix <- confusionMatrix(test$classe, rf_test)
+
+```
+
+Confusion Matrix
+```{r }
+knitr::opts_chunk$set(echo = TRUE)
+
+print(rf_Test_confmatrix$table)
+
+```
+
+Accuracy
+```{r }
+knitr::opts_chunk$set(echo = TRUE)
+
+print(rf_Test_confmatrix$overall)
+
+```
+
+The accuracy of random forest `r rf_Test_confmatrix$overall[1]` is comparatively higher than the other models.
+
+
+##**Prediction of Exercise Type**
+
+```{r }
+knitr::opts_chunk$set(echo = TRUE)
+
+Final_Test_Data <- read.csv("pml-testing.csv", na.strings = c("", "NA"))
+Final_Test_Data <- Final_Test_Data[,-1:-7]
+Final_Test_Data <- Final_Test_Data[,NA_summary$Row_num]
+
+Final_Prediction <- predict(rf_model, newdata = Final_Test_Data)
+Final_Prediction
+```
+
